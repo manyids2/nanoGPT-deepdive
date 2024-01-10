@@ -1,0 +1,22 @@
+__global__:
+  data_name: shakespeare-tokens
+  data_run: char
+
+  batch_size: 12
+  block_size: 256
+  vocab_size: 65
+
+  n_head: 8
+  n_embd: 256
+
+single:
+  n_layer: 1
+
+double:
+  n_layer: 2
+
+small:
+  n_layer: 5
+
+gpt2:
+  n_layer: 12

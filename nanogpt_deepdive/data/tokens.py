@@ -73,6 +73,8 @@ def encode_char(input_txt: Path, train_bin: Path, val_bin: Path, meta_pkl: Path)
     # export to bin files
     train_ids = np.array(train_ids, dtype=np.uint16)
     val_ids = np.array(val_ids, dtype=np.uint16)
+    print("train_ids", train_ids.max())
+    print("val_ids", val_ids.max())
     train_ids.tofile(train_bin)
     val_ids.tofile(val_bin)
 
@@ -124,4 +126,6 @@ if __name__ == "__main__":
         logdir=dir_from_env(DATADIR),
         create=True,
     )
+    train_bin = expt.rundir / "train.bin"
+    val_bin = expt.rundir / "val.bin"
     encode_tiktoken(path, train_bin, val_bin)

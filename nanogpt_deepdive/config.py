@@ -1,6 +1,19 @@
 from typing import Optional
+from pathlib import Path
 import torch
 from dataclasses import dataclass
+
+
+def dir_from_env(var: str = "NANOGPT_SRCDIR"):
+    import os
+
+    _dir = os.environ.get(var)
+    if _dir:
+        dir = Path(_dir)
+        dir.mkdir(parents=True, exist_ok=True)
+        return dir
+    else:
+        raise KeyError(f"Env var not found: {var}")
 
 
 @dataclass
@@ -76,11 +89,14 @@ class Config:
     )
     compile: bool = True  # use PyTorch 2.0 to compile the model to be faster
 
-    # Training on multiple gpus
+    # Training on multiple gpus -
+    # TODO: Not supported for now, will understand and add later
     ddp: bool = False
     master_process: bool = True
     seed_offset: int = 0
-    ddp_world_size: int = 1
+    ddp_rank: int = 1
+    ddp_local_rank: int = 0
+    ddp_world_size: int = 0
 
     tokens_per_iter = 0
 

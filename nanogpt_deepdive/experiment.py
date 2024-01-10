@@ -22,6 +22,12 @@ def runs(expt: str, logdir: Path) -> list[str]:
     return [d.stem for d in (logdir / expt).iterdir() if d.is_dir()]
 
 
+def load_yaml(path: Path) -> dict:
+    with open(path, "r") as f:
+        cfg = yaml.safe_load(f)
+    return cfg
+
+
 class Experiment:
     logdir: Path
 
@@ -60,3 +66,19 @@ class Experiment:
     def save_cfg(self, cfg: dict) -> None:
         with open(self.rundir / "config.yaml", "w") as f:
             yaml.dump(cfg, f, sort_keys=False)
+
+    def get_cfg_from_srcdir(self):
+        # Load baseline config
+        srcdir = dir_from_env("NANOGPT_SRCDIR") / "experiments"
+        base = load_yaml(srcdir / self.name / "baseline.yaml")
+
+        # Update base by globals in runs file
+        runs = load_yaml(srcdir / self.name / "runs.yaml")
+        base.update(runs["__global__"]) if "__global__" in runs else 0
+
+        # Update with run specific info
+        assert (
+            self.run in runs
+        ), f"Could not find run: {self.run} ({srcdir / self.name / 'runs.yaml'})"
+        base.update(runs[self.run])
+        return base

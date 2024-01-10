@@ -1,10 +1,11 @@
 from typing import Optional
 from pathlib import Path
+import time
+import math
 import os
 from contextlib import nullcontext
 
 import torch
-from torch.distributed import init_process_group
 
 from nanoGPT.model import GPT
 from nanogpt_deepdive.config import Config, GPTConfig
@@ -30,7 +31,6 @@ class Trainer:
         self.cfg = cfg if cfg else self.get_cfg()
 
         # Initialize stuff
-        self.init_ddp()
         self.init_tokens_per_iter()
         self.init_cuda()
 
@@ -38,6 +38,7 @@ class Trainer:
         # Make into class methods that accept config?
         self.data = data if data else self.get_data(datadir)
         self.model = model if model else self.get_model()
+        self.model.to(self.cfg.device)
 
     def get_cfg(self) -> Config:
         return Config(**self.expt.get_cfg())
@@ -90,33 +91,12 @@ class Trainer:
                 "block_size"
             ] = cfg.block_size  # so that the checkpoint will have the right value
         model.to(cfg.device)
+
+        # compile the model, requires PyTorch 2.0
+        print("compiling the model... (takes a ~minute)")
+        model: GPT = torch.compile(model)  # type: ignore
+
         return model
-
-    def init_ddp(self):
-        cfg = self.cfg
-        # various inits, derived attributes, I/O setup
-        ddp = int(os.environ.get("RANK", -1)) != -1  # is this a ddp run?
-        if ddp:
-            init_process_group(backend=cfg.backend)
-            ddp_rank = int(os.environ["RANK"])
-            ddp_local_rank = int(os.environ["LOCAL_RANK"])
-            cfg.ddp_world_size = int(os.environ["WORLD_SIZE"])
-            cfg.device = f"cuda:{ddp_local_rank}"
-            torch.cuda.set_device(cfg.device)
-
-            # this process will do logging, checkpointing etc.
-            cfg.master_process = ddp_rank == 0
-            cfg.seed_offset = ddp_rank  # each process gets a different seed
-
-            # world_size number of processes will be training simultaneously, so we can scale
-            # down the desired gradient accumulation iterations per process proportionally
-            assert cfg.gradient_accumulation_steps % cfg.ddp_world_size == 0
-            cfg.gradient_accumulation_steps //= cfg.ddp_world_size
-        else:
-            # if not ddp, we are running on a single gpu, and one process
-            cfg.master_process = True
-            cfg.seed_offset = 0
-            cfg.ddp_world_size = 1
 
     def init_tokens_per_iter(self):
         cfg = self.cfg
@@ -156,15 +136,166 @@ class Trainer:
             else torch.amp.autocast(device_type=cfg.device_type, dtype=ptdtype)
         )
 
+    def get_scaler(self):
+        # initialize a GradScaler. If enabled=False scaler is a no-op
+        scaler = torch.cuda.amp.GradScaler(enabled=(self.cfg.dtype == "float16"))  # type: ignore
+        return scaler
+
+    def get_optimizer(self):
+        cfg = self.cfg
+        optimizer = self.model.configure_optimizers(
+            cfg.weight_decay,
+            cfg.learning_rate,
+            (cfg.beta1, cfg.beta2),
+            cfg.device_type,
+        )
+        # TODO: Support resume
+        # if cfg.init_from == "resume":
+        #     optimizer.load_state_dict(checkpoint["optimizer"])
+        # checkpoint = None  # free up memory
+        return optimizer
+
+    @torch.no_grad()
+    def estimate_loss(self, ctx):
+        # helps estimate an arbitrarily accurate loss over either split using many batches
+        cfg = self.cfg
+        out = {}
+        self.model.eval()
+        for split in ["train", "val"]:
+            losses = torch.zeros(cfg.eval_iters)
+            for k in range(cfg.eval_iters):
+                X, Y = self.data.get_batch(split)
+                with ctx:
+                    _, loss = self.model(X, Y)
+                losses[k] = loss.item()
+            out[split] = losses.mean()
+        self.model.train()
+        return out
+
+    def get_lr(self, it):
+        # learning rate decay scheduler (cosine with warmup)
+        cfg = self.cfg
+        warmup_iters = cfg.warmup_iters
+        # 1) linear warmup for warmup_iters steps
+        if it < warmup_iters:
+            return cfg.learning_rate * it / warmup_iters
+        # 2) if it > lr_decay_iters, return min learning rate
+        if it > cfg.lr_decay_iters:
+            return cfg.min_lr
+        # 3) in between, use cosine decay down to min learning rate
+        decay_ratio = (it - warmup_iters) / (cfg.lr_decay_iters - warmup_iters)
+        assert 0 <= decay_ratio <= 1
+        coeff = 0.5 * (1.0 + math.cos(math.pi * decay_ratio))  # coeff ranges 0..1
+        return cfg.min_lr + coeff * (cfg.learning_rate - cfg.min_lr)
+
+    def train(self):
+        cfg = self.cfg
+        iter_num = 0  # Needs override in case of resume
+        best_val_loss = 1e9
+
+        optimizer = self.get_optimizer()
+        scaler = self.get_scaler()
+        ctx = self.get_ctx()
+
+        # training loop
+        X, Y = self.data.get_batch("train")  # fetch the very first batch
+        t0 = time.time()
+        local_iter_num = 0  # number of iterations in the lifetime of this process
+        running_mfu = -1.0
+
+        while True:
+            # determine and set the learning rate for this iteration
+            lr = self.get_lr(iter_num) if cfg.decay_lr else cfg.learning_rate
+            for param_group in optimizer.param_groups:
+                param_group["lr"] = lr
+
+            # evaluate the loss on train/val sets and write checkpoints
+            if iter_num % cfg.eval_interval == 0 and cfg.master_process:
+                losses = self.estimate_loss(ctx)
+                print(
+                    f"step {iter_num}: train loss {losses['train']:.4f}, val loss {losses['val']:.4f}"
+                )
+                if losses["val"] < best_val_loss or cfg.always_save_checkpoint:
+                    best_val_loss = losses["val"]
+                    if iter_num > 0:
+                        checkpoint = {
+                            "model": self.model.state_dict(),
+                            "optimizer": optimizer.state_dict(),
+                            "model_args": cfg.__dict__,
+                            "iter_num": iter_num,
+                            "best_val_loss": best_val_loss,
+                            "config": cfg.__dict__,
+                        }
+                        print(f"saving checkpoint to {self.expt.rundir}")
+                        torch.save(
+                            checkpoint,
+                            os.path.join(
+                                self.expt.rundir,
+                                f"ckpt-{int(iter_num / cfg.eval_interval)}.pt",
+                            ),
+                        )
+            if iter_num == 0 and cfg.eval_only:
+                break
+
+            # forward backward update, with optional gradient accumulation to simulate larger batch size
+            # and using the GradScaler if data type is float16
+            for _ in range(cfg.gradient_accumulation_steps):
+                with ctx:
+                    _, loss = self.model(X, Y)
+                    loss = (
+                        loss / cfg.gradient_accumulation_steps
+                    )  # scale the loss to account for gradient accumulation
+                # immediately async prefetch next batch while model is doing the forward pass on the GPU
+                X, Y = self.data.get_batch("train")
+                # backward pass, with gradient scaling if training in fp16
+                scaler.scale(loss).backward()  # type: ignore
+            # clip the gradient
+            if cfg.grad_clip != 0.0:
+                scaler.unscale_(optimizer)
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(), cfg.grad_clip)  # type: ignore
+            # step the optimizer and scaler if training in fp16
+            scaler.step(optimizer)
+            scaler.update()
+            # flush the gradients as soon as we can, no need for this memory anymore
+            optimizer.zero_grad(set_to_none=True)
+
+            # timing and logging
+            t1 = time.time()
+            dt = t1 - t0
+            t0 = t1
+            if iter_num % cfg.log_interval == 0 and cfg.master_process:
+                # get loss as float. note: this is a CPU-GPU sync point
+                # scale up to undo the division above, approximating the true total loss (exact would have been a sum)
+                lossf = loss.item() * cfg.gradient_accumulation_steps  # type: ignore
+                if local_iter_num >= 5:  # let the training loop settle a bit
+                    mfu = self.model.estimate_mfu(
+                        cfg.batch_size * cfg.gradient_accumulation_steps, dt
+                    )
+                    running_mfu = (
+                        mfu if running_mfu == -1.0 else 0.9 * running_mfu + 0.1 * mfu
+                    )
+                print(
+                    f"iter {iter_num}: loss {lossf:.4f}, time {dt*1000:.2f}ms, mfu {running_mfu*100:.2f}%"
+                )
+            iter_num += 1
+            local_iter_num += 1
+
+            # termination conditions
+            if iter_num > cfg.max_iters:
+                break
+
 
 if __name__ == "__main__":
-    from rich import print
+    import sys
+    from pprint import pprint
 
-    # expt = Experiment("debug", "barebones", create=True)
-    # cfg = Config()
-    # t = Trainer(expt=expt, cfg=cfg)
-    # t.save_cfg()
+    assert len(sys.argv) == 2
+    expt = Experiment("shakespeare-layers", sys.argv[1], create=True)
+    cfg = Config(**expt.get_cfg_from_srcdir())
+    t = Trainer(expt=expt, cfg=cfg)
+    t.save_cfg()
+    pprint(t.cfg.__dict__)
 
-    expt = Experiment("debug", "barebones")
-    t = Trainer(expt=expt)
-    print(t.cfg.__dict__)
+    print(f"\n\nUsing CUDA: {cfg.device == 'cuda'} ({cfg.device})\n\n")
+
+    t.train()
