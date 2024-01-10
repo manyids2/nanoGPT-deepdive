@@ -4,8 +4,6 @@ import requests
 import tiktoken
 import numpy as np
 
-from nanogpt_deepdive.experiment import Experiment, dir_from_env
-
 
 def download_dataset(path: Path):
     if path.exists():
@@ -96,6 +94,8 @@ def encode_char(input_txt: Path, train_bin: Path, val_bin: Path, meta_pkl: Path)
 
 
 if __name__ == "__main__":
+    from nanogpt_deepdive.experiment import Experiment, dir_from_env
+
     DATADIR = "NANOGPT_DATADIR"
 
     expt = Experiment(

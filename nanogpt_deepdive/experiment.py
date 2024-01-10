@@ -1,3 +1,4 @@
+import yaml
 from pathlib import Path
 
 
@@ -50,3 +51,12 @@ class Experiment:
     def init_dirs(self):
         (self.rundir / "checkpoints").mkdir(exist_ok=True)
         (self.rundir / "models").mkdir(exist_ok=True)
+
+    def get_cfg(self) -> dict:
+        with open(self.rundir / "config.yaml", "r") as f:
+            cfg = yaml.safe_load(f)
+        return cfg
+
+    def save_cfg(self, cfg: dict) -> None:
+        with open(self.rundir / "config.yaml", "w") as f:
+            yaml.dump(cfg, f, sort_keys=False)
