@@ -1,4 +1,4 @@
-PHONY: tiktoken
+.PHONY: tiktoken
 
 tiktoken:
 	# Install in current env

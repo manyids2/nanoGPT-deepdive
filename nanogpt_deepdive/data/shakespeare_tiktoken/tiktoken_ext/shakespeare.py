@@ -25,6 +25,7 @@ def save_shakespeare_word_bpe():
     input_txt = dir_from_env() / "shakespeare-tokens" / "input.txt"
     bpe_path = dir_from_env() / "shakespeare-tokens" / "word" / "tokens.tiktoken"
     data = input_txt.read_text()
+    chars = sorted(list(set(data)))  # get unique characters
     lines = data.split("\n")
     words = []
     for line in lines:
@@ -33,7 +34,18 @@ def save_shakespeare_word_bpe():
         # TODO: Further split by ["'", ",", "?", ...]
         words.extend(_words)
     words = sorted(list(set(words)))  # get unique words
-    mergeable_ranks = {bytes(ch, "utf-8"): i for i, ch in enumerate(words)}
+    clean = []
+    delims = "!$&',-.3:;?"
+    for w in words:
+        for d in delims:
+            w = w.replace(d, " ")
+        _words = w.split(" ")
+        _words = [w for w in _words if len(w) > 0]
+        clean.extend(_words)
+    clean = sorted(
+        list(set([*chars, *[d for d in delims], *clean]))
+    )  # get unique words
+    mergeable_ranks = {bytes(ch, "utf-8"): i for i, ch in enumerate(clean)}
     dump_tiktoken_bpe(mergeable_ranks, str(bpe_path))
 
 
@@ -45,7 +57,8 @@ ENDOFTEXT = "<|endoftext|>"
 
 def shakespeare_char():
     mergeable_ranks = load_tiktoken_bpe(
-        str(dir_from_env() / "shakespeare-tokens" / "char" / "tokens.tiktoken")
+        str(dir_from_env() / "shakespeare-tokens" / "char" / "tokens.tiktoken"),
+        cached=False,
     )
     return {
         "name": "shakespeare_char",
@@ -58,10 +71,11 @@ def shakespeare_char():
 
 def shakespeare_word():
     mergeable_ranks = load_tiktoken_bpe(
-        str(dir_from_env() / "shakespeare-tokens" / "word" / "tokens.tiktoken")
+        str(dir_from_env() / "shakespeare-tokens" / "word" / "tokens.tiktoken"),
+        cached=False,  # Take care of cache, causes some issues
     )
     return {
-        "name": "shakespeare_char",
+        "name": "shakespeare_word",
         "explicit_n_vocab": len(mergeable_ranks) + 1,
         "pat_str": PAT_STR,
         "mergeable_ranks": mergeable_ranks,
@@ -71,6 +85,7 @@ def shakespeare_word():
 
 ENCODING_CONSTRUCTORS = {
     "shakespeare_char": shakespeare_char,
+    "shakespeare_word": shakespeare_word,
 }
 
 if __name__ == "__main__":
@@ -80,4 +95,4 @@ if __name__ == "__main__":
 
     # Save, load and check: Works!
     save_shakespeare_word_bpe()
-    print(shakespeare_word())
+    print(shakespeare_word())  # 13330

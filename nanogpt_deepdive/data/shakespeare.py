@@ -15,7 +15,9 @@ def download_dataset(path: Path):
     print(f"Downloaded: {path}")
 
 
-def encode_tiktoken(input_txt: Path, train_bin: Path, val_bin: Path):
+def encode_tiktoken(
+    name: str, input_txt: Path, train_bin: Path, val_bin: Path, meta_pkl: Path
+):
     data = input_txt.read_text()
     n = len(data)
     train_data = data[: int(n * 0.9)]
@@ -23,7 +25,7 @@ def encode_tiktoken(input_txt: Path, train_bin: Path, val_bin: Path):
 
     # --- Shakespeare tiktoken ---
     # encode with tiktoken gpt2 bpe
-    enc = tiktoken.get_encoding("gpt2")
+    enc = tiktoken.get_encoding(name)
     train_ids = enc.encode_ordinary(train_data)
     val_ids = enc.encode_ordinary(val_data)
     print(f"train has {len(train_ids):,} tokens")
@@ -35,8 +37,14 @@ def encode_tiktoken(input_txt: Path, train_bin: Path, val_bin: Path):
     train_ids.tofile(train_bin)
     val_ids.tofile(val_bin)
 
-    # train.bin has 301,966 tokens
-    # val.bin has 36,059 tokens
+    # save the meta information as well, to help us encode/decode later
+    meta = {
+        "vocab_size": enc.max_token_value + 1,  # End token :/
+        "itos": {v: k for k, v in enc._mergeable_ranks.items()},  # Hopefully never used
+        "stoi": enc._mergeable_ranks,
+    }
+    with open(meta_pkl, "wb") as f:
+        pickle.dump(meta, f)
 
 
 def encode_char(input_txt: Path, train_bin: Path, val_bin: Path, meta_pkl: Path):
@@ -107,7 +115,29 @@ if __name__ == "__main__":
         create=True,
     )
     path = expt.namedir / "input.txt"
-    download_dataset(path)
+    # download_dataset(path)
+
+    # expt = Experiment(
+    #     name="shakespeare-tokens",
+    #     run="char",
+    #     logdir=dir_from_env(DATADIR),
+    #     create=True,
+    # )
+    # train_bin = expt.rundir / "train.bin"
+    # val_bin = expt.rundir / "val.bin"
+    # meta_pkl = expt.rundir / "meta.pkl"
+    # encode_char(path, train_bin, val_bin, meta_pkl)
+
+    # expt = Experiment(
+    #     name="shakespeare-tokens",
+    #     run="tiktoken",
+    #     logdir=dir_from_env(DATADIR),
+    #     create=True,
+    # )
+    # train_bin = expt.rundir / "train.bin"
+    # val_bin = expt.rundir / "val.bin"
+    # meta_pkl = expt.rundir / "meta.pkl"
+    # encode_tiktoken("gpt2", path, train_bin, val_bin, meta_pkl)
 
     expt = Experiment(
         name="shakespeare-tokens",
@@ -115,17 +145,20 @@ if __name__ == "__main__":
         logdir=dir_from_env(DATADIR),
         create=True,
     )
-    train_bin = expt.rundir / "train.bin"
-    val_bin = expt.rundir / "val.bin"
-    meta_pkl = expt.rundir / "meta.pkl"
-    encode_char(path, train_bin, val_bin, meta_pkl)
+    train_bin = expt.rundir / "tiktoken-train.bin"
+    val_bin = expt.rundir / "tiktoken-val.bin"
+    meta_pkl = expt.rundir / "tiktoken-meta.pkl"
+    encode_tiktoken("shakespeare_char", path, train_bin, val_bin, meta_pkl)
+    # train has 1,003,854 tokens
+    # val has 111,540 tokens
 
     expt = Experiment(
         name="shakespeare-tokens",
-        run="tiktoken",
+        run="word",
         logdir=dir_from_env(DATADIR),
         create=True,
     )
     train_bin = expt.rundir / "train.bin"
     val_bin = expt.rundir / "val.bin"
-    encode_tiktoken(path, train_bin, val_bin)
+    meta_pkl = expt.rundir / "meta.pkl"
+    encode_tiktoken("shakespeare_word", path, train_bin, val_bin, meta_pkl)
