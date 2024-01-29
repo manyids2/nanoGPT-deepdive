@@ -52,7 +52,7 @@ class Experiment:
         if create:
             self.rundir.mkdir(parents=True, exist_ok=True)
         else:
-            assert self.rundir.exists()
+            assert self.rundir.exists(), f"No such dir: {self.rundir}"
 
     def init_dirs(self):
         (self.rundir / "checkpoints").mkdir(exist_ok=True)
