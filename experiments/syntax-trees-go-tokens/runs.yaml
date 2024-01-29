@@ -1,0 +1,17 @@
+__global__:
+  data_name: syntax-trees-go-tokens
+
+  max_iters: 5000
+  batch_size: 64
+  block_size: 256
+  vocab_size: 43
+
+  n_layer: 6
+  n_head: 6
+  n_embd: 384
+
+kubernetes-char:
+  data_run: kubernetes-char
+
+char:
+  data_run: char

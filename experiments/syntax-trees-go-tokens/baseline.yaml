@@ -1,19 +1,19 @@
 eval_interval: 1000
-log_interval: 100
+log_interval: 10
 eval_iters: 200
 eval_only: false
 always_save_checkpoint: true
 
 init_from: scratch
-data_name: shakespeare-tokens
-data_run: char
+data_name: syntax-trees-go-tokens
+data_run: kubernetes-char
 seed: 1337
 
 batch_size: 64
 block_size: 256
-vocab_size: 65
-meta_vocab_size: null
-tokens_per_iter: 122880
+vocab_size: 43
+meta_vocab_size: 43
+tokens_per_iter: 16384
 
 n_layer: 6
 n_head: 6
@@ -30,7 +30,7 @@ grad_clip: 1.0
 decay_lr: true
 warmup_iters: 100
 lr_decay_iters: 5000
-min_lr: 0.0001
+min_lr: 0.001
 gradient_accumulation_steps: 1
 
 backend: nccl

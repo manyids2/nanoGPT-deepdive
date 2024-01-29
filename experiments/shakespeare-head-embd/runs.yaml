@@ -7,17 +7,22 @@ __global__:
   block_size: 256
   vocab_size: 65
 
+  n_layer: 6
   n_head: 6
   n_embd: 384
 
-single:
-  n_layer: 1
-
-double:
-  n_layer: 2
-
-baby:
+h6_m384:
   n_layer: 6
+  n_embd: 384
 
-gpt2:
-  n_layer: 12
+h8_m256:
+  n_layer: 8
+  n_embd: 256
+
+h4_m256:
+  n_layer: 4
+  n_embd: 256
+
+h8_m512:
+  n_layer: 8
+  n_embd: 512

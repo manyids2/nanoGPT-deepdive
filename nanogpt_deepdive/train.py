@@ -1,8 +1,7 @@
-from typing import Optional
+from typing import Optional, Union, Dict, Any
 from pathlib import Path
 import time
 import math
-import os
 from contextlib import nullcontext
 
 import torch
@@ -18,6 +17,9 @@ class Trainer:
     cfg: Config
     data: Dataset
     model: GPT
+    model_args: Dict[str, Union[int, str, float]]
+    ckpt_path: Path
+    checkpoint: Any
 
     def __init__(
         self,
@@ -25,6 +27,7 @@ class Trainer:
         cfg: Optional[Config] = None,
         data: Optional[Dataset] = None,
         model: Optional[GPT] = None,
+        ckpt_path: Optional[Path] = None,
         datadir: Path = dir_from_env("NANOGPT_DATADIR"),
     ) -> None:
         self.expt = expt
@@ -36,6 +39,7 @@ class Trainer:
 
         # TODO: How to handle if above stuff is not yet initialized?
         # Make into class methods that accept config?
+        self.ckpt_path = ckpt_path if ckpt_path else self.expt.rundir / "ckpt.pt"
         self.data = data if data else self.get_data(datadir)
         self.model = model if model else self.get_model()
         self.model.to(self.cfg.device)
@@ -62,28 +66,79 @@ class Trainer:
         return data
 
     def get_model(self) -> GPT:
-        # TODO: support resume, etc
         cfg = self.cfg
         model_args = dict(
-            n_layer=cfg.n_layer,
-            n_head=cfg.n_head,
-            n_embd=cfg.n_embd,
-            block_size=cfg.block_size,
-            bias=cfg.bias,
-            vocab_size=None,
-            dropout=cfg.dropout,
+            n_layer=int(cfg.n_layer),
+            n_head=int(cfg.n_head),
+            n_embd=int(cfg.n_embd),
+            block_size=int(cfg.block_size),
+            bias=bool(cfg.bias),
+            vocab_size=int(cfg.vocab_size),  # Make sure we know it!
+            dropout=float(cfg.dropout),
         )  # start with model_args from command line
-        assert cfg.init_from == "scratch"
-        # init a new model from scratch
-        print("Initializing a new model from scratch")
-        # determine the vocab size we'll use for from-scratch training
-        if cfg.meta_vocab_size is None:
-            print("defaulting to vocab_size of GPT-2 to 65")
-        model_args["vocab_size"] = (
-            cfg.meta_vocab_size if cfg.meta_vocab_size is not None else 65
-        )
-        gptconf = GPTConfig(**model_args)  # type: ignore
-        model = GPT(gptconf)
+
+        # Convenience: Switch to resume if ckpt_path exists
+        if self.ckpt_path.exists():
+            cfg.init_from = "resume"
+
+        checkpoint = None
+        if cfg.init_from == "scratch":
+            print("Initializing model from scratch")
+            gptconf = GPTConfig(**model_args)  # type: ignore
+            model = GPT(gptconf)
+        elif cfg.init_from == "resume":
+            if not self.ckpt_path.exists():
+                raise FileNotFoundError(f"File not found: {self.ckpt_path}")
+            checkpoint = torch.load(self.ckpt_path, map_location=cfg.device)
+            checkpoint_model_args = checkpoint["model_args"]
+
+            # force these config attributes to be equal otherwise we can't even resume training
+            # the rest of the attributes (e.g. dropout) can stay as desired from command line
+            for k in [
+                "n_layer",
+                "n_head",
+                "n_embd",
+                "block_size",
+                "bias",
+                "vocab_size",
+            ]:
+                model_args[k] = checkpoint_model_args[k]
+
+            # init a new model from scratch
+            print(f"Initializing model from resume: {self.ckpt_path}")
+            gptconf = GPTConfig(**model_args)  # type: ignore
+            model = GPT(gptconf)
+
+            state_dict = checkpoint["model"]
+            # fix the keys of the state dictionary :(
+            # honestly no idea how checkpoints sometimes get this prefix, have to debug more
+            unwanted_prefix = "_orig_mod."
+            for k, _ in list(state_dict.items()):
+                if k.startswith(unwanted_prefix):
+                    state_dict[k[len(unwanted_prefix) :]] = state_dict.pop(k)
+            model.load_state_dict(state_dict)
+            self.iter_num = checkpoint["iter_num"]
+            self.best_val_loss = checkpoint["best_val_loss"]
+            self.checkpoint = checkpoint
+        elif cfg.init_from.startswith("gpt2"):
+            print(f"Initializing from OpenAI GPT-2 weights: {cfg.init_from}")
+            override_args = dict(dropout=cfg.dropout)
+            model = GPT.from_pretrained(cfg.init_from, override_args)
+            # read off the created config params, so we can store them into checkpoint correctly
+            for k in [
+                "n_layer",
+                "n_head",
+                "n_embd",
+                "block_size",
+                "bias",
+                "vocab_size",
+            ]:
+                model_args[k] = getattr(model.config, k)
+        else:
+            raise KeyError(f"Unknown init_from: {cfg.init_from}")
+
+        self.model_args = model_args  # type: ignore
+
         # crop down the model block size if desired, using model surgery
         if cfg.block_size < model.config.block_size:
             model.crop_block_size(cfg.block_size)
@@ -101,6 +156,7 @@ class Trainer:
     def init_tokens_per_iter(self):
         cfg = self.cfg
         # Compute tokens per training iteration
+        # Not based on size of dataset
         cfg.tokens_per_iter = (
             cfg.gradient_accumulation_steps
             * cfg.ddp_world_size
@@ -149,10 +205,9 @@ class Trainer:
             (cfg.beta1, cfg.beta2),
             cfg.device_type,
         )
-        # TODO: Support resume
-        # if cfg.init_from == "resume":
-        #     optimizer.load_state_dict(checkpoint["optimizer"])
-        # checkpoint = None  # free up memory
+        if cfg.init_from == "resume":
+            optimizer.load_state_dict(self.checkpoint["optimizer"])
+        self.checkpoint = None  # free up memory
         return optimizer
 
     @torch.no_grad()
@@ -229,10 +284,8 @@ class Trainer:
                         print(f"saving checkpoint to {self.expt.rundir}")
                         torch.save(
                             checkpoint,
-                            os.path.join(
-                                self.expt.rundir,
-                                f"ckpt-{int(iter_num / cfg.eval_interval)}.pt",
-                            ),
+                            self.expt.rundir
+                            / f"ckpt-{int(iter_num / cfg.eval_interval)}.pt",
                         )
             if iter_num == 0 and cfg.eval_only:
                 break
@@ -289,13 +342,12 @@ if __name__ == "__main__":
     import sys
     from pprint import pprint
 
-    assert len(sys.argv) == 2
-    expt = Experiment("shakespeare-layers", sys.argv[1], create=True)
+    assert len(sys.argv) == 3
+    expt = Experiment(sys.argv[1], sys.argv[2], create=True)
     cfg = Config(**expt.get_cfg_from_srcdir())
     t = Trainer(expt=expt, cfg=cfg)
-    t.save_cfg()
     pprint(t.cfg.__dict__)
+    t.save_cfg()
 
     print(f"\n\nUsing CUDA: {cfg.device == 'cuda'} ({cfg.device})\n\n")
-
     t.train()

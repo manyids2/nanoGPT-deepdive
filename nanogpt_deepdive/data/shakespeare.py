@@ -91,8 +91,8 @@ def encode_char(input_txt: Path, train_bin: Path, val_bin: Path, meta_pkl: Path)
     # all the unique characters:
     #  !$&',-.3:;?ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz
     # vocab size: 65
-    # train has 1003854 tokens
-    # val has 111540 tokens
+    # train has 1,003,854 tokens
+    # val has 111,540 tokens
 
 
 if __name__ == "__main__":

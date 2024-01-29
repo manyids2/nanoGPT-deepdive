@@ -18,8 +18,8 @@ def expts(logdir: Path) -> list[str]:
     return [d.stem for d in logdir.iterdir() if d.is_dir()]
 
 
-def runs(expt: str, logdir: Path) -> list[str]:
-    return [d.stem for d in (logdir / expt).iterdir() if d.is_dir()]
+def runs(name: str, logdir: Path) -> list[str]:
+    return [d.stem for d in (logdir / name).iterdir() if d.is_dir()]
 
 
 def load_yaml(path: Path) -> dict:
@@ -31,8 +31,8 @@ def load_yaml(path: Path) -> dict:
 class Experiment:
     logdir: Path
 
-    expt: str
-    exptdir: Path
+    name: str
+    namedir: Path
 
     run: str
     rundir: Path

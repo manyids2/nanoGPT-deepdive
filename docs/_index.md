@@ -1,4 +1,8 @@
-# Parts
+---
+title: 'Deep dive - nanoGPT'
+date: 2024-01-27T13:21:21+01:00
+draft: true
+---
 
 ## data
 
@@ -13,7 +17,7 @@
 - h -> blocks/layers
 - ln_f -> layer norm
 
-```python{.ref=GPT.transformer,.type=declaration}
+```python
 self.transformer = nn.ModuleDict(dict(
     wte = nn.Embedding(config.vocab_size, config.n_embd),
     wpe = nn.Embedding(config.block_size, config.n_embd),
@@ -23,7 +27,7 @@ self.transformer = nn.ModuleDict(dict(
 ))
 ```
 
-```python{.ref=Embedding}
+```python
 class Embedding(Module):
     r"""A simple lookup table that stores embeddings of a fixed dictionary and size.
 
@@ -123,7 +127,7 @@ class Embedding(Module):
     """
 ```
 
-```python{.ref=LayerNorm}
+```python
 class LayerNorm(nn.Module):
     """ LayerNorm but with an optional bias. PyTorch doesn't support simply bias=False """
 
@@ -136,7 +140,7 @@ class LayerNorm(nn.Module):
         return F.layer_norm(input, self.weight.shape, self.weight, self.bias, 1e-5)
 ```
 
-```python{.ref=Block}
+```python
 class Block(nn.Module):
 
     def __init__(self, config):
@@ -152,7 +156,7 @@ class Block(nn.Module):
         return x
 ```
 
-```python{.ref=MLP}
+```python
 class MLP(nn.Module):
 
     def __init__(self, config):
@@ -170,7 +174,7 @@ class MLP(nn.Module):
         return x
 ```
 
-```python{.ref=CausalSelfAttention}
+```python
 class CausalSelfAttention(nn.Module):
 
     def __init__(self, config):

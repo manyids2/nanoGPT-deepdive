@@ -1,8 +1,15 @@
-# tokens
+---
+title: 'tokens'
+date: 2024-01-27T13:21:21+01:00
+draft: true
+---
+
+## Introduction to tokenizers
+
 
 Influence of tokenizer on generation of shakespeare.
 
-## tiktoken
+### tiktoken
 
 ```yaml
 expt: shakespeare-tokens
@@ -16,7 +23,7 @@ checkpoints:
   - epoch-1000
 ```
 
-## char
+### char
 
 ```yaml
 expt: shakespeare-tokens
@@ -30,7 +37,7 @@ checkpoints:
   - epoch-1000
 ```
 
-## word
+### word
 
 ```yaml
 expt: shakespeare-tokens

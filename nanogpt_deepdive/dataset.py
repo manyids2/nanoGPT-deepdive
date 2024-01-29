@@ -66,3 +66,23 @@ class Dataset:
         else:
             x, y = x.to(device), y.to(device)
         return x, y
+
+
+if __name__ == "__main__":
+    import sys
+    from nanogpt_deepdive.config import Config
+    from nanogpt_deepdive.experiment import Experiment, dir_from_env
+
+    assert len(sys.argv) == 3
+    expt = Experiment(sys.argv[1], sys.argv[2], create=True)
+    cfg = Config(**expt.get_cfg_from_srcdir())
+    data = Dataset(
+        name=cfg.data_name,
+        run=cfg.data_run,
+        datadir=dir_from_env("NANOGPT_DATADIR"),
+        block_size=cfg.block_size,
+        batch_size=cfg.batch_size,
+        device=cfg.device,
+        device_type=cfg.device_type,
+    )
+    print(data)
