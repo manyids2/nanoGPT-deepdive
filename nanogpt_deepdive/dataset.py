@@ -70,6 +70,8 @@ class Dataset:
 
 if __name__ == "__main__":
     import sys
+    import tiktoken
+    import numpy as np
     from nanogpt_deepdive.config import Config
     from nanogpt_deepdive.experiment import Experiment, dir_from_env
 
@@ -86,3 +88,25 @@ if __name__ == "__main__":
         device_type=cfg.device_type,
     )
     print(data)
+
+    # TODO: Save encoding as well in metadata pickle
+    # Ditch the itos, stoi, once we have enc._mergeable_ranks
+    NAME = "shakespeare_char"
+    from rich import print
+
+    enc = tiktoken.get_encoding(NAME)
+
+    unique_values, value_counts = np.unique(data.train_data, return_counts=True)
+    freq_dict = dict(zip(unique_values, value_counts))
+    sorted_dict = dict(
+        sorted(freq_dict.items(), key=lambda item: item[1], reverse=True)
+    )
+    for i, (k, v) in enumerate(sorted_dict.items()):
+        print(f"{i}: {k}: {v}")
+        if i > 10:
+            break
+
+    # from nanogpt_deepdive.viz import plot_histogram
+    # from term_image.image import AutoImage
+    #
+    # print(AutoImage(plot_histogram(data.train_data, bins=1000)))

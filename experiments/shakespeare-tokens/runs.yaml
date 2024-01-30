@@ -1,0 +1,18 @@
+__global__:
+  data_name: shakespeare-tokens
+
+  n_layer: 6
+  n_head: 6
+  n_embd: 384
+
+char:
+  data_run: char
+  vocab_size: 65
+
+tiktoken-char:
+  data_run: char
+  vocab_size: 66
+
+tiktoken-word:
+  data_run: tiktoken-word
+  vocab_size: 13367

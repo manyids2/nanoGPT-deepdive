@@ -1,5 +1,5 @@
-eval_interval: 2000
-log_interval: 1
+eval_interval: 1000
+log_interval: 10
 eval_iters: 200
 eval_only: false
 always_save_checkpoint: true
@@ -9,29 +9,29 @@ data_name: shakespeare-tokens
 data_run: char
 seed: 1337
 
-gradient_accumulation_steps: 40
-batch_size: 12
+batch_size: 64
 block_size: 256
 vocab_size: 65
 meta_vocab_size: null
 tokens_per_iter: 122880
 
-n_layer: 5
-n_head: 8
-n_embd: 256
-dropout: 0.0
+n_layer: 6
+n_head: 6
+n_embd: 384
+dropout: 0.2
 bias: false
 
-learning_rate: 0.0006
+learning_rate: 0.001
+max_iters: 5000
 beta1: 0.9
-beta2: 0.95
-max_iters: 600000
+beta2: 0.99
 weight_decay: 0.1
 grad_clip: 1.0
 decay_lr: true
-warmup_iters: 2000
-lr_decay_iters: 600000
-min_lr: 6.0e-05
+warmup_iters: 100
+lr_decay_iters: 5000
+min_lr: 0.001
+gradient_accumulation_steps: 1
 
 backend: nccl
 device: cuda
