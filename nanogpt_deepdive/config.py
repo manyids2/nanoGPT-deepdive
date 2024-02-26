@@ -17,17 +17,6 @@ def dir_from_env(var: str = "NANOGPT_SRCDIR"):
 
 
 @dataclass
-class GPTConfig:
-    block_size: int = 256
-    vocab_size: int = 65
-    n_layer: int = 5
-    n_head: int = 8
-    n_embd: int = 256
-    dropout: float = 0.0
-    bias: bool = True  # True: bias in Linears and LayerNorms, like GPT-2. False: a bit better and faster
-
-
-@dataclass
 class Config:
     # I/O
     eval_interval: int = 2000
@@ -57,6 +46,7 @@ class Config:
     n_embd: int = 256
     dropout: float = 0.0  # for pretraining 0 is good, for finetuning try 0.1+
     bias: bool = False  # do we use bias inside LayerNorm and Linear layers?
+    variant: str = "sum"
 
     # adamw optimizer
     learning_rate: float = 6e-4  # max learning rate

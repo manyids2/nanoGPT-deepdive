@@ -3,3 +3,4 @@ __pycache__/
 .envrc
 nanogpt_deepdive/data/shakespeare_tiktoken/shakespeare_char.egg-info
 nanogpt_deepdive/data/shakespeare_tiktoken/build/lib/tiktoken_ext
+scratch.py

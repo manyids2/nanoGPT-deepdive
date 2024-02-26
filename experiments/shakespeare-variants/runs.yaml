@@ -1,0 +1,23 @@
+__global__:
+  data_name: shakespeare-tokens
+  data_run: char
+
+  max_iters: 5000
+  batch_size: 64
+  block_size: 256
+  vocab_size: 65
+
+  n_layer: 6
+  n_head: 6
+  n_embd: 384
+  variant: sum
+
+sum:
+  variant: sum
+
+concat:
+  variant: concat
+
+cart-prod:
+  variant: cart-prod
+

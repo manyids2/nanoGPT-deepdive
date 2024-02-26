@@ -28,6 +28,15 @@ def load_yaml(path: Path) -> dict:
     return cfg
 
 
+def run_shell_cmd(cmd: list[str]) -> tuple[int, list[str]]:
+    from subprocess import Popen, PIPE
+
+    p = Popen(cmd, stdout=PIPE, stderr=PIPE)
+    stdout, _ = p.communicate()
+    output = stdout.decode("utf-8").splitlines()
+    return p.returncode, output
+
+
 class Experiment:
     logdir: Path
 
@@ -43,12 +52,14 @@ class Experiment:
         run: str,
         logdir: Path = dir_from_env("NANOGPT_LOGDIR"),
         create: bool = False,
+        debug: bool = False,
     ) -> None:
         self.name = name
         self.run = run
         self.logdir = Path(logdir)
         self.namedir = self.logdir / name
         self.rundir = self.logdir / name / run
+        self.debug = debug
         if create:
             self.rundir.mkdir(parents=True, exist_ok=True)
         else:
@@ -64,6 +75,14 @@ class Experiment:
         return cfg
 
     def save_cfg(self, cfg: dict) -> None:
+        # Get current git status
+        status, _ = run_shell_cmd(["git", "diff-index", "--quiet", "HEAD", "--"])
+        if status != 0 & ~self.debug:
+            raise RuntimeError("Git is dirty")
+        _, commit = run_shell_cmd(["git", "rev-parse", "HEAD"])
+        cfg["commit"] = commit
+
+        # Dump yaml
         with open(self.rundir / "config.yaml", "w") as f:
             yaml.dump(cfg, f, sort_keys=False)
 

@@ -6,8 +6,8 @@ from contextlib import nullcontext
 
 import torch
 
-from nanoGPT.model import GPT
-from nanogpt_deepdive.config import Config, GPTConfig
+from nanogpt_deepdive.models.gpt import GPT, GPTConfig
+from nanogpt_deepdive.config import Config
 from nanogpt_deepdive.experiment import Experiment, dir_from_env
 from nanogpt_deepdive.dataset import Dataset
 
@@ -74,6 +74,7 @@ class Trainer:
             block_size=int(cfg.block_size),
             bias=bool(cfg.bias),
             vocab_size=int(cfg.vocab_size),  # Make sure we know it!
+            variant=str(cfg.variant),
             dropout=float(cfg.dropout),
         )  # start with model_args from command line
 

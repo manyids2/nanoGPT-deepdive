@@ -1,4 +1,5 @@
 from pathlib import Path
+from pprint import pprint
 
 import torch
 from nanogpt_deepdive.experiment import Experiment
@@ -60,12 +61,12 @@ class Sampler:
         name: str,
         run: str,
         ckpt_name: str,
-        startfile: Path,
-        prompt: str,
-        num_samples: int,
-        max_new_tokens: int,
-        temperature: float,
-        top_k: int,
+        startfile: Path = Path(""),
+        prompt: str = "",
+        num_samples: int = 1,
+        max_new_tokens: int = 1024,
+        temperature: float = 0.5,
+        top_k: int = 0,
     ) -> None:
         self.name = name
         self.run = run
@@ -82,6 +83,9 @@ class Sampler:
         t.model.eval()
         pprint(t.cfg)
 
+        # Context - not sure why
+        self.ctx = t.get_ctx()
+
         # Save references
         self.t = t
         self.expt = expt
@@ -91,42 +95,56 @@ class Sampler:
         assert meta
         stoi, itos = meta["stoi"], meta["itos"]
         self.encode = lambda s: [stoi[c] for c in s]
-        self.decode = lambda l: "".join([itos[i] for i in l])
+        self.decode = lambda x: "".join([itos[i] for i in x])
 
         # Load from startfile if necessary
-        # self.start = "\n"  # or "<|endoftext|>" or etc. Can also specify a file, use as: "FILE:prompt.txt"
-        self.start = "^"  # Our start token
         if self.startfile.exists() & self.startfile.is_file():
-            print(f"Using prompt from: {self.startfile}")
-            self.start = self.startfile.read_text()
-        elif self.prompt != "":
-            print(f"Using prompt: {self.prompt}")
-            self.start = self.prompt
+            self.prompt = self.startfile.read_text()
+        self.set_prompt(prompt)
 
-        # Encode the beginning of the prompt
-        start_ids = self.encode(self.start)
-        self.x = torch.tensor(start_ids, dtype=torch.long, device=t.cfg.device)[
+    def set_prompt(self, prompt: str = "^"):
+        self.start = prompt
+        start_ids = self.encode(prompt)
+        self.x = torch.tensor(start_ids, dtype=torch.long, device=self.t.cfg.device)[
             None, ...
         ]
 
-        # Run generation
-        self.ctx = t.get_ctx()
-
     @torch.no_grad()
-    def generate(self):
+    def generate(self) -> str:
         with self.ctx:
             y = self.t.model.generate(
                 self.x,
-                args.max_new_tokens,
-                temperature=args.temperature,
-                top_k=args.top_k,
+                self.max_new_tokens,
+                temperature=self.temperature,
+                top_k=self.top_k if self.top_k > 0 else None,
             )
-            print(self.decode(y[0].tolist()))
-            print("---------------")
+            response = self.decode(y[0].tolist())
+        return response
+
+    @torch.no_grad()
+    def generate_for_prompt(
+        self,
+        prompt: str,
+        temperature: float = 0.3,
+        max_new_tokens: int = 256,
+        top_k: int = 0,
+    ) -> str:
+        start_ids = self.encode(prompt)
+        x = torch.tensor(start_ids, dtype=torch.long, device=self.t.cfg.device)[
+            None, ...
+        ]
+        with self.ctx:
+            y = self.t.model.generate(
+                x,
+                max_new_tokens=max_new_tokens,
+                temperature=temperature,
+                top_k=top_k if top_k > 0 else None,
+            )
+            response = self.decode(y[0].tolist())
+        return response
 
 
 if __name__ == "__main__":
-    from pprint import pprint
     import argparse
 
     # Load experiment and checkpoint
