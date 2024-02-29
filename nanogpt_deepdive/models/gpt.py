@@ -152,7 +152,7 @@ class GPT(nn.Module):
         self.config = config
 
         variant = self.config.variant
-        if variant == "sum":
+        if "sum" in variant:
             self.transformer = nn.ModuleDict(
                 dict(
                     wte=nn.Embedding(config.vocab_size, config.n_embd),
@@ -162,13 +162,29 @@ class GPT(nn.Module):
                     ln_f=LayerNorm(config.n_embd, bias=config.bias),
                 )
             )
-        elif variant == "concat":
+        elif "concat" in variant:
             self.transformer = nn.ModuleDict(
                 dict(
                     wte=nn.Embedding(config.vocab_size, config.n_embd),
                     wpe=nn.Embedding(config.block_size, config.n_embd),
                     # Extra dimension reduction
                     red=nn.Linear(config.n_embd * 2, config.n_embd, bias=False),
+                    drop=nn.Dropout(config.dropout),
+                    h=nn.ModuleList([Block(config) for _ in range(config.n_layer)]),
+                    ln_f=LayerNorm(config.n_embd, bias=config.bias),
+                )
+            )
+        elif "cart-prod" in variant:
+            # For cart-prod
+            self.n_pos = 8
+            self.transformer = nn.ModuleDict(
+                dict(
+                    wte=nn.Embedding(config.vocab_size, config.n_embd),
+                    wpe=nn.Embedding(config.block_size, self.n_pos),
+                    # Extra dimension reduction
+                    red=nn.Linear(
+                        config.n_embd * self.n_pos, config.n_embd, bias=False
+                    ),
                     drop=nn.Dropout(config.dropout),
                     h=nn.ModuleList([Block(config) for _ in range(config.n_layer)]),
                     ln_f=LayerNorm(config.n_embd, bias=config.bias),
@@ -232,15 +248,28 @@ class GPT(nn.Module):
 
         # variants
         variant = self.config.variant
-        if variant == "sum":
-            z = tok_emb + pos_emb
-        elif variant == "concat":
+        if "sum" in variant:
+            z = tok_emb + pos_emb  # (b, t, n_embd)
+        elif "concat" in variant:
             z = torch.concat(
                 [tok_emb, torch.broadcast_to(pos_emb, tok_emb.shape)], dim=2
             )
-            z = self.transformer.red(z)
+            z = self.transformer.red(z)  # (b, t, n_embd)
+        elif "cart-prod" in variant:
+            n_pos = self.n_pos
+            b, t, n_tok = tok_emb.shape
+            pos_emb = torch.broadcast_to(pos_emb, (b, t, n_pos))
+            tok = torch.tile(tok_emb.unsqueeze(-1), [1, n_pos])
+            pos = torch.tile(pos_emb.unsqueeze(-2), [n_tok, 1])
+            tok = tok.reshape(b, t, n_pos * n_tok)
+            pos = pos.reshape(b, t, n_pos * n_tok)
+            z = self.transformer.red(tok * pos)
         else:
             raise KeyError(f"No such variant: {variant}")
+
+        # normalization
+        if "norm" in variant:
+            z = torch.norm(z, dim=2)
 
         # rest
         x = self.transformer.drop(z)
