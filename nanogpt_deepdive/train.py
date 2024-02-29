@@ -149,8 +149,9 @@ class Trainer:
         model.to(cfg.device)
 
         # compile the model, requires PyTorch 2.0
-        print("compiling the model... (takes a ~minute)")
-        model: GPT = torch.compile(model)  # type: ignore
+        if cfg.compile:
+            print("compiling the model... (takes a ~minute)")
+            model: GPT = torch.compile(model)  # type: ignore
 
         return model
 

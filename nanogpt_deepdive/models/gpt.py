@@ -168,7 +168,7 @@ class GPT(nn.Module):
                     wte=nn.Embedding(config.vocab_size, config.n_embd),
                     wpe=nn.Embedding(config.block_size, config.n_embd),
                     # Extra dimension reduction
-                    red=nn.Linear(config.block_size * 2, config.block_size, bias=False),
+                    red=nn.Linear(config.n_embd * 2, config.n_embd, bias=False),
                     drop=nn.Dropout(config.dropout),
                     h=nn.ModuleList([Block(config) for _ in range(config.n_layer)]),
                     ln_f=LayerNorm(config.n_embd, bias=config.bias),
@@ -235,7 +235,10 @@ class GPT(nn.Module):
         if variant == "sum":
             z = tok_emb + pos_emb
         elif variant == "concat":
-            z = tok_emb + pos_emb
+            z = torch.concat(
+                [tok_emb, torch.broadcast_to(pos_emb, tok_emb.shape)], dim=2
+            )
+            z = self.transformer.red(z)
         else:
             raise KeyError(f"No such variant: {variant}")
 

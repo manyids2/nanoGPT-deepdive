@@ -27,6 +27,7 @@ class Config:
     # if True, always save a checkpoint after each eval
     always_save_checkpoint: bool = True
     init_from: str = "scratch"  # 'scratch' or 'resume' or 'gpt2*'
+    debug: bool = False
 
     # data
     data_name: str = "shakespeare-tokens"

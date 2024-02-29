@@ -77,7 +77,7 @@ class Experiment:
     def save_cfg(self, cfg: dict) -> None:
         # Get current git status
         status, _ = run_shell_cmd(["git", "diff-index", "--quiet", "HEAD", "--"])
-        if status != 0 & ~self.debug:
+        if (status != 0) & (not self.debug):
             raise RuntimeError("Git is dirty")
         _, commit = run_shell_cmd(["git", "rev-parse", "HEAD"])
         cfg["commit"] = commit
